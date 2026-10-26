@@ -85,6 +85,8 @@ class Link extends EventEmitter {
   /** Listens for other apps and starts looking for them. */
   async start() {
     if (this.running) return;
+    // Keys decrypted with an async decrypt: until then a paired app would look unpaired.
+    await this.keys.ready;
     paths.ensureDir(this.place);
     this.socketPath = paths.socketPath(this.self.slug, this.place);
     await this.listen();

@@ -44,6 +44,46 @@ test('with encrypt and decrypt, a key is never stored as it is; one that can’t
   assert.equal(fileKeyStore(file).get('x'), null, 'a broken file is as good as empty');
 });
 
+test('with an async encrypt and decrypt (Electron’s encryptStringAsync), keys are read back once ready, and never stored as they are', async () => {
+  const file = tmpFile();
+  const crypt = { encrypt: async (t) => Buffer.from(t).toString('hex'), decrypt: async (t) => Buffer.from(t, 'hex').toString() };
+  const s = fileKeyStore(file, crypt);
+  assert.equal(s.encrypted, true);
+  s.set('x', 'secret');
+  assert.equal(s.get('x').key, 'secret', 'at once, before it is encrypted');
+  assert.ok(!fs.existsSync(file), 'not written before it is encrypted');
+  await new Promise((r) => setImmediate(r));
+  assert.ok(!fs.readFileSync(file, 'utf8').includes('secret'));
+  const next = fileKeyStore(file, crypt);
+  assert.equal(next.get('x'), null, 'not until it is decrypted');
+  await next.ready;
+  assert.equal(next.get('x').key, 'secret', 'read back by the next launch');
+  const broken = fileKeyStore(file, { encrypt: crypt.encrypt, decrypt: async () => Promise.reject(new Error('another keychain')) });
+  await broken.ready;
+  assert.equal(broken.get('x'), null, 'one that can’t be decrypted counts as unpaired');
+  const failing = fileKeyStore(file, { encrypt: async () => Promise.reject(new Error('no keychain')), decrypt: crypt.decrypt });
+  await failing.ready;
+  failing.set('y', 'other');
+  await new Promise((r) => setImmediate(r));
+  assert.equal(failing.get('y').key, 'other', 'one that can’t be encrypted is kept for this run');
+  assert.ok(!fs.readFileSync(file, 'utf8').includes('other'), 'and never written');
+});
+
+test('a key paired again or removed while the saved ones are decrypting isn’t brought back', async () => {
+  const file = tmpFile();
+  const hex = (t) => Buffer.from(t).toString('hex');
+  fileKeyStore(file, { encrypt: hex, decrypt: (t) => Buffer.from(t, 'hex').toString() }).set('x', 'old');
+  fileKeyStore(file, { encrypt: hex, decrypt: (t) => Buffer.from(t, 'hex').toString() }).set('y', 'gone');
+  const opening = [];
+  const s = fileKeyStore(file, { encrypt: async (t) => hex(t), decrypt: (t) => new Promise((r) => opening.push(() => r(Buffer.from(t, 'hex').toString()))) });
+  s.set('x', 'new');
+  s.delete('y');
+  for (const open of opening) open();
+  await s.ready;
+  assert.equal(s.get('x').key, 'new');
+  assert.equal(s.get('y'), null);
+});
+
 test('keys in memory', () => {
   const m = memoryKeyStore();
   m.set('a', 'k');

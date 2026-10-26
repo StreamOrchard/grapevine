@@ -5,8 +5,9 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('fs');
 const net = require('net');
+const path = require('path');
 const hs = require('../src/handshake');
-const { createLink, CODES, memoryKeyStore, paths, KNOWN_APPS } = require('../src');
+const { createLink, CODES, memoryKeyStore, fileKeyStore, paths, KNOWN_APPS } = require('../src');
 const { LineReader, encode } = require('../src/framing');
 const { LOG_DATA_MAX, QUEUE_MAX } = require('../src/connection');
 const { PD, MV, FAST, tmpPlace, pair, once, until, sleep, raw } = require('./helpers');
@@ -131,6 +132,32 @@ test(
     await pd.stop();
     await pd.stop(); // twice is fine
     await mv.start(); // already running: nothing happens
+  }),
+);
+
+test(
+  'with keys decrypted asynchronously, start() waits for them: after a restart it connects with the kept key, not as unpaired',
+  withPlace(async ({ place }, track) => {
+    const file = path.join(place.env.GRAPEVINE_DIR, 'pd-grapevine.json');
+    const slow = (t) => new Promise((r) => setTimeout(() => r(t), 50));
+    const crypt = { encrypt: (t) => slow(Buffer.from(t).toString('hex')), decrypt: (t) => slow(Buffer.from(t, 'hex').toString()) };
+    const mvKeys = memoryKeyStore();
+    const first = pair(place, { pd: { keys: fileKeyStore(file, crypt) }, mv: { keys: mvKeys } });
+    const { mv } = first;
+    let { pd } = first;
+    track(pd, mv);
+    await pd.start();
+    await mv.start();
+    await once(mv, 'connected');
+    const { key } = await until(() => mvKeys.get(PD.id), 'Stream Multiview to keep the key');
+    await until(() => fs.existsSync(file) && fs.readFileSync(file, 'utf8').includes('"encrypted": true'), 'Pear Drops to save its key, encrypted');
+    await pd.stop();
+    ({ pd } = pair(place, { pd: { keys: fileKeyStore(file, crypt) } }));
+    track(pd);
+    await pd.start();
+    await once(pd, 'connected');
+    assert.equal(pd.keys.get(MV.id).key, key, 'the same key');
+    assert.equal(mvKeys.get(PD.id).key, key, 'not paired again');
   }),
 );
 

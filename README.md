@@ -53,9 +53,11 @@ const link = createLink({
   provides: grapevine.provides, // what it tells other apps
   uses: grapevine.uses, // what it listens to
   allowed: (appId) => settings.connectedApps[appId]?.enabled === true, // your Connected apps switches
+  // Pairing keys, encrypted with the system keychain. encrypt and decrypt may return promises:
+  // start() waits for the saved keys to be decrypted.
   keys: fileKeyStore(path.join(app.getPath('userData'), 'grapevine.json'), {
-    encrypt: (t) => safeStorage.encryptString(t).toString('base64'),
-    decrypt: (t) => safeStorage.decryptString(Buffer.from(t, 'base64')),
+    encrypt: async (t) => (await safeStorage.encryptStringAsync(t)).toString('base64'),
+    decrypt: async (t) => (await safeStorage.decryptStringAsync(Buffer.from(t, 'base64'))).result,
   }),
   appDataDir: app.getPath('appData'), // to show "Not installed" for apps that aren't
   confirmPairing: true, // a first pairing waits for your user's Allow on the card (see below)
