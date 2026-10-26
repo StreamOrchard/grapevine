@@ -1,6 +1,9 @@
 # What's new in Grapevine
 
-## 0.11.0 (current)
+## 0.11.1 (current)
+- `fileKeyStore`: `decrypt` can give `{ text, reEncrypt: true }` (Electron's `shouldReEncrypt`), and the key is saved again, encrypted with the system's new key.
+
+## 0.11.0
 - `fileKeyStore` takes an `encrypt` and `decrypt` that return promises, such as Electron's `safeStorage.encryptStringAsync` and `decryptStringAsync` (its synchronous methods are deprecated in Electron 45). Saved keys are decrypted up front, `link.start()` waits for them (`keys.ready`), and a key is only written once encrypted. Synchronous ones work as before, and keys saved with them still decrypt.
 
 ## 0.10.2
