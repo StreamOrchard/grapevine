@@ -29,6 +29,8 @@ export interface AppInfo {
 export interface KeyStore {
   /** Whether keys are encrypted at rest */
   encrypted?: boolean;
+  /** Settles once every saved key is decrypted (start() waits for it) */
+  ready?: Promise<void>;
   get(appId: string): { key: string; pairedAt?: string } | null;
   set(appId: string, key: string): void;
   delete(appId: string): void;
@@ -244,8 +246,11 @@ export declare const CODES: Readonly<{
 export declare const PROTOCOL: { min: number; max: number };
 export declare const KNOWN_APPS: KnownApp[];
 
-/** Keys in a small file in the app's data folder, encrypted with encrypt/decrypt (e.g. Electron's safeStorage) when given. */
-export declare function fileKeyStore(file: string, crypt?: { encrypt?: (text: string) => string; decrypt?: (stored: string) => string }): KeyStore;
+/** Keys in a small file in the app's data folder, encrypted with encrypt/decrypt (e.g. Electron's safeStorage) when given, at once or as a promise. */
+export declare function fileKeyStore(
+  file: string,
+  crypt?: { encrypt?: (text: string) => string | Promise<string>; decrypt?: (stored: string) => string | Promise<string> },
+): KeyStore;
 export declare function memoryKeyStore(): KeyStore;
 export declare function isInstalled(app: KnownApp, appDataDir: string): boolean;
 export declare function iconDataUrl(file: string): string;
