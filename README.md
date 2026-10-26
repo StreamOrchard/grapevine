@@ -57,7 +57,10 @@ const link = createLink({
   // start() waits for the saved keys to be decrypted.
   keys: fileKeyStore(path.join(app.getPath('userData'), 'grapevine.json'), {
     encrypt: async (t) => (await safeStorage.encryptStringAsync(t)).toString('base64'),
-    decrypt: async (t) => (await safeStorage.decryptStringAsync(Buffer.from(t, 'base64'))).result,
+    decrypt: async (t) => {
+      const { result, shouldReEncrypt } = await safeStorage.decryptStringAsync(Buffer.from(t, 'base64'));
+      return { text: result, reEncrypt: shouldReEncrypt }; // saved again with the system's new key
+    },
   }),
   appDataDir: app.getPath('appData'), // to show "Not installed" for apps that aren't
   confirmPairing: true, // a first pairing waits for your user's Allow on the card (see below)

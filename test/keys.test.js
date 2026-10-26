@@ -84,6 +84,36 @@ test('a key paired again or removed while the saved ones are decrypting isn’t 
   assert.equal(s.get('y'), null);
 });
 
+test('a key decrypt says to encrypt again (the system’s key changed) is saved again with the new one', async () => {
+  const file = tmpFile();
+  const hex = (t) => Buffer.from(t).toString('hex');
+  const unhex = (t) => Buffer.from(t, 'hex').toString();
+  fileKeyStore(file, { encrypt: hex, decrypt: unhex }).set('x', 'secret');
+  // The new key marks what it encrypts with v2:. What the old one saved still opens, and says so.
+  const crypt = {
+    encrypt: async (t) => `v2:${hex(t)}`,
+    decrypt: async (t) => (t.startsWith('v2:') ? unhex(t.slice(3)) : { text: unhex(t), reEncrypt: true }),
+  };
+  const s = fileKeyStore(file, crypt);
+  await s.ready;
+  assert.equal(s.get('x').key, 'secret');
+  await new Promise((r) => setImmediate(r));
+  const saved = JSON.parse(fs.readFileSync(file, 'utf8')).peers.x;
+  assert.equal(saved.key, `v2:${hex('secret')}`, 'saved again with the new key');
+  assert.equal(saved.encrypted, true);
+  // One that can't be encrypted again keeps what was saved.
+  const before = fs.readFileSync(file, 'utf8');
+  const stuck = fileKeyStore(file, {
+    encrypt: () => {
+      throw new Error('no keychain');
+    },
+    decrypt: (t) => ({ text: unhex(t.slice(3)), reEncrypt: true }),
+  });
+  await stuck.ready;
+  assert.equal(stuck.get('x').key, 'secret');
+  assert.equal(fs.readFileSync(file, 'utf8'), before);
+});
+
 test('keys in memory', () => {
   const m = memoryKeyStore();
   m.set('a', 'k');
