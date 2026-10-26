@@ -246,10 +246,13 @@ export declare const CODES: Readonly<{
 export declare const PROTOCOL: { min: number; max: number };
 export declare const KNOWN_APPS: KnownApp[];
 
+/** What a key store's decrypt gives: the key, or the key and whether to encrypt it again (the system's key changed) */
+export type Opened = string | { text: string; reEncrypt?: boolean };
+
 /** Keys in a small file in the app's data folder, encrypted with encrypt/decrypt (e.g. Electron's safeStorage) when given, at once or as a promise. */
 export declare function fileKeyStore(
   file: string,
-  crypt?: { encrypt?: (text: string) => string | Promise<string>; decrypt?: (stored: string) => string | Promise<string> },
+  crypt?: { encrypt?: (text: string) => string | Promise<string>; decrypt?: (stored: string) => Opened | Promise<Opened> },
 ): KeyStore;
 export declare function memoryKeyStore(): KeyStore;
 export declare function isInstalled(app: KnownApp, appDataDir: string): boolean;

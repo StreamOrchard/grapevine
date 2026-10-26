@@ -14,9 +14,11 @@ const path = require('path');
  * @property {(id: string) => void} delete
  */
 
+/** @typedef {string | {text: string, reEncrypt?: boolean}} Opened what decrypt gives: the key, or the key and whether to encrypt it again (Electron's shouldReEncrypt) */
+
 /**
  * @param {any} v
- * @returns {v is PromiseLike<string>}
+ * @returns {v is PromiseLike<any>}
  */
 function isPromise(v) {
   return typeof v?.then === 'function';
@@ -24,9 +26,11 @@ function isPromise(v) {
 
 /**
  * @param {string} file e.g. <userData>/grapevine.json
- * @param {{encrypt?: (text: string) => string | Promise<string>, decrypt?: (stored: string) => string | Promise<string>}} [crypt]
+ * @param {{encrypt?: (text: string) => string | Promise<string>, decrypt?: (stored: string) => Opened | Promise<Opened>}} [crypt]
  *   encrypt returns text to store (base64, say) and decrypt reverses it, either at once or as a
- *   promise (Electron's encryptStringAsync and decryptStringAsync). Without them, keys are stored as they are.
+ *   promise (Electron's encryptStringAsync and decryptStringAsync). decrypt can also give
+ *   { text, reEncrypt: true } when the system's key changed: the key is then saved again, encrypted
+ *   with the new one. Without them, keys are stored as they are.
  * @returns {KeyStore}
  */
 function fileKeyStore(file, { encrypt, decrypt } = {}) {
@@ -48,12 +52,36 @@ function fileKeyStore(file, { encrypt, decrypt } = {}) {
     fs.renameSync(tmp, file); // all at once: a crash never leaves half a file
   };
 
+  // Encrypts a key and writes it, unless it was paired again or removed meanwhile. One that can't be
+  // encrypted isn't written: kept for this run only (or, saved before, as it was).
+  const seal = (id, p, key) => {
+    const stored = (text) => {
+      if (peers[id] !== p) return;
+      p.key = text;
+      save();
+    };
+    let out;
+    try {
+      out = encrypt(key);
+    } catch {
+      return;
+    }
+    if (isPromise(out)) out.then(stored, () => {});
+    else stored(out);
+  };
+
   // Decrypt the saved keys up front, so get() can answer at once. A key paired again (or removed)
   // meanwhile isn't overwritten by the old one.
   const opening = Object.entries(peers)
     .filter(([, p]) => p.encrypted && crypt)
     .map(([id, p]) => {
-      const keep = (key) => peers[id] === p && plain.set(id, key);
+      /** @param {Opened} out */
+      const keep = (out) => {
+        if (peers[id] !== p) return;
+        const { text, reEncrypt } = typeof out === 'string' ? { text: out, reEncrypt: false } : out;
+        plain.set(id, text);
+        if (reEncrypt) seal(id, p, text);
+      };
       try {
         const out = decrypt(p.key);
         if (!isPromise(out)) return keep(out);
@@ -82,15 +110,7 @@ function fileKeyStore(file, { encrypt, decrypt } = {}) {
       const p = { pairedAt, encrypted: true };
       peers[id] = p;
       plain.set(id, key);
-      const stored = (text) => {
-        if (peers[id] !== p) return; // paired again, or removed, since
-        p.key = text;
-        save();
-      };
-      const out = encrypt(key);
-      if (isPromise(out))
-        out.then(stored, () => {}); // can't encrypt: kept for this run only
-      else stored(out);
+      seal(id, p, key);
     },
     delete(id) {
       if (!(id in peers)) return;
