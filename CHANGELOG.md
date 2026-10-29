@@ -1,6 +1,9 @@
 # What's new in Grapevine
 
-## 0.11.1 (current)
+## 0.11.2 (current)
+- The short folder in `/tmp` that holds the sockets when the shared folder's paths would be too long is removed when the last app in it stops (it was left behind every time, e.g. by every test run), and an app starting as it goes makes it again.
+
+## 0.11.1
 - `fileKeyStore`: `decrypt` can give `{ text, reEncrypt: true }` (Electron's `shouldReEncrypt`), and the key is saved again, encrypted with the system's new key.
 
 ## 0.11.0
