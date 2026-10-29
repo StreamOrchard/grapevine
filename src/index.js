@@ -122,7 +122,19 @@ class Link extends EventEmitter {
           this.server = server;
           resolve();
         });
+      let again = false;
       server.on('error', (/** @type {NodeJS.ErrnoException} */ err) => {
+        // The folder gone (another app's stop() removed the short /tmp one as it was made): made again, once.
+        // (macOS says EACCES for a folder that isn't there, Linux ENOENT.)
+        if ((err.code === 'ENOENT' || err.code === 'EACCES') && platform !== 'win32' && !again && !fs.existsSync(paths.socketDir(this.place))) {
+          again = true;
+          try {
+            paths.ensureDir(this.place);
+          } catch (e) {
+            return reject(e);
+          }
+          return go();
+        }
         if (err.code !== 'EADDRINUSE' || platform === 'win32') return reject(err);
         // A socket file is there already. If nothing answers, a crash left it: replace it.
         const probe = net.createConnection(this.socketPath);
@@ -176,6 +188,14 @@ class Link extends EventEmitter {
       try {
         fs.unlinkSync(this.socketPath);
       } catch {}
+      // A short folder in /tmp (the shared folder's paths were too long) goes with the last app in it.
+      // Only when empty: another app's socket keeps it.
+      const dir = paths.socketDir(this.place);
+      if (dir !== paths.linkDir(this.place)) {
+        try {
+          fs.rmdirSync(dir);
+        } catch {}
+      }
     }
   }
 

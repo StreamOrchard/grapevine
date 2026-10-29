@@ -264,6 +264,7 @@ test(
     if (process.platform === 'win32') return;
     await assert.rejects(twin.start(), /Another copy of Pear Drops/);
     await pd.stop();
+    paths.ensureDir(place); // (a short /tmp folder goes with its last app; a crash would have left it)
     fs.writeFileSync(paths.socketPath(PD.slug, place), ''); // a leftover, nobody listening
     const { pd: again } = pair(place);
     track(again);
@@ -1187,6 +1188,43 @@ test(
       assert.equal([...map.keys()].at(-1), 'r1004');
     } finally {
       Connection.prototype.report = report;
+    }
+  }),
+);
+
+test(
+  "a short /tmp folder (the shared folder's paths too long) goes with the last app in it, and an app starting as it goes makes it again",
+  { skip: process.platform === 'win32' && 'named pipes, no folder' },
+  withPlace(async ({ dir }, track) => {
+    const place = { env: { GRAPEVINE_DIR: path.join(dir, 'a-very-long-folder-name-'.repeat(4)) } };
+    const short = paths.socketDir(place);
+    assert.notEqual(short, paths.linkDir(place), 'its paths are too long for the folder itself');
+    try {
+      const { pd, mv } = pair(place);
+      track(pd, mv);
+      await pd.start();
+      await mv.start();
+      await once(mv, 'connected');
+      await pd.stop();
+      assert.ok(fs.existsSync(short), "Multiview's socket keeps it");
+      await mv.stop();
+      assert.ok(!fs.existsSync(short), 'gone with the last one');
+      // the folder removed between start()'s making it and listening in it
+      const make = paths.ensureDir;
+      let first = true;
+      paths.ensureDir = (p) => {
+        make(p);
+        if (first) ((first = false), fs.rmdirSync(paths.socketDir(p)));
+      };
+      try {
+        await pd.start();
+      } finally {
+        paths.ensureDir = make;
+      }
+      assert.ok(fs.existsSync(paths.socketPath(PD.slug, place)), 'listening, in the folder made again');
+      await pd.stop();
+    } finally {
+      fs.rmSync(short, { recursive: true, force: true });
     }
   }),
 );
